@@ -1,7 +1,15 @@
 # FatFish 本地聊天 bot
 
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.9%2B-3776AB.svg)](requirements.txt)
+
 适配 `FatFish.exe`（后端 `resources\server\minimost-server.exe`，默认
 `http://127.0.0.1:5000`）的独立 Python bot。
+
+FatFish 官方 API 只有推送方向、没有读取接口，所以这里靠**只读轮询它的 SQLite**
+来收消息，再通过 API 或直写数据库回消息。在此之上有一个可选的中间层
+[`keihub/`](keihub/README.md)，能把 FatFish、QQ、momoi_bot、DeepSeek Harness
+串成一条链路，并允许按频道选择由哪个「大脑」来回复。
 
 ## 仓库里有两个东西
 
@@ -232,3 +240,11 @@ start_bot.bat
    bot 启动时会探测 KeiHub 的 `http://127.0.0.1:8765/api/status`，
    发现它在跑就直接退出（退出码 2）；确实要同时跑就加 `--force`。
 6. 令牌等于 bot 账号的发言权，不要提交到仓库或截图外传。
+
+## 许可
+
+[MIT](LICENSE) © 2026 huizhang123321
+
+随便用、改、商用、再发布，保留版权声明即可。仓库里不含任何 FatFish / NapCat /
+DeepSeek Harness 的代码，本项目只通过它们的公开接口或本地数据库与之交互；
+这些软件各自的许可请见其官方发布页。
