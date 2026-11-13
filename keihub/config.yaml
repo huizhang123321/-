@@ -84,6 +84,7 @@ adapters:
       #   user: 3337894736
       #   name: "爱丽丝"
 
+  # 旧位置：仍然生效，等价于 brains.dsh（保留是为了不改老配置）
   dsh:
     enabled: false
     host: "127.0.0.1"
@@ -92,8 +93,30 @@ adapters:
     reply_timeout_seconds: 180
     fallback_to_bot: true
 
+# ── 谁来回话（可选大脑）──────────────────────────────────
+# onebot = momoi_bot（默认，行为和以前完全一样）
+# dsh    = DeepSeek Harness（需要装 dsh-hub-bridge 插件）
+# http   = 任意 HTTP 服务，POST 进去、同步拿回复
+brains:
+  active: "onebot"          # 便捷写法：routing 没指定时用它当全局默认
+  dsh:
+    enabled: false
+    host: "127.0.0.1"
+    port: 3020
+    reply_timeout_seconds: 180
+    fallback_to_bot: true
+  http:
+    enabled: false
+    url: ""                 # 例如 http://127.0.0.1:8090/reply
+    token: ""
+    timeout_seconds: 60
+
 routing:
-  default_brain: "bot"          # bot / dsh
-  fatfish_brain: "bot"          # bot / dsh
-  onebot_brain: "bot"           # bot / dsh
+  default_brain: "onebot"       # onebot / dsh / http
+  fatfish_brain: "onebot"       # FatFish 消息交给谁
+  onebot_brain: "onebot"        # QQ 消息交给谁
+  # 按 FatFish 频道单独指定，优先于上面两条。例：
+  # channels:
+  #   "dm:huizhang:key": "dsh"
+  channels: {}
   mirror_qq_to_fatfish: false

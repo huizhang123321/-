@@ -16,6 +16,7 @@ class HubRuntime:
         self.snow = None
         self.fatfish = None
         self.dsh = None
+        self.brains: dict = {}
         self.bus = None
         self.state = None
         self.log_path = BASE_DIR / "logs" / "hub.log"
@@ -48,9 +49,16 @@ class HubRuntime:
         brains = {}
         if self.bus is not None:
             brains = {
-                "fatfish": getattr(self.bus, "fatfish_brain", "bot"),
-                "onebot": getattr(self.bus, "onebot_brain", "bot"),
+                "fatfish": getattr(self.bus, "fatfish_brain", "onebot"),
+                "onebot": getattr(self.bus, "onebot_brain", "onebot"),
             }
+        brain_list = []
+        try:
+            from brains import describe as describe_brains
+
+            brain_list = describe_brains(self.brains)
+        except Exception:
+            brain_list = []
         return {
             "ok": True,
             "started_at": self.started_at,
@@ -63,5 +71,7 @@ class HubRuntime:
             "fatfish_send_mode": fat_mode,
             "fatfish_token_set": fat_token,
             "brains": brains,
+            "brain_list": brain_list,
+            "channel_brains": dict(getattr(self.bus, "channel_brains", {}) or {}),
             "log_path": str(self.log_path),
         }

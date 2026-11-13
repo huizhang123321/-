@@ -37,6 +37,13 @@ class HubBus:
             5, int((cfg.get("hub", {}) or {}).get("private_route_window_seconds", 45) or 45)
         )
 
+        # 可选大脑（brains/ 下注册的实例），以及按频道单独指定
+        self.brains: dict = {}
+        self.channel_brains: dict[str, str] = {}
+        for channel, brain_name in (routing.get("channels") or {}).items():
+            if str(brain_name or "").strip():
+                self.channel_brains[str(channel)] = str(brain_name).strip()
+
         self.channel_to_group: dict[str, int] = {}
         self.group_to_channel: dict[int, str] = {}
         self.user_map: dict[str, int] = {}
@@ -166,6 +173,54 @@ class HubBus:
     def bind_bot(self, bot):
         self.bot = bot
 
+    def bind_brains(self, brains: dict):
+        """登记可选的「大脑」。key 是 brain.name。"""
+        self.brains = dict(brains or {})
+
+    def brain_for(self, source: str, channel: str = ""):
+        """挑这条消息该交给哪个可选脑。
+
+        返回 None 表示「用默认链路」——也就是 momoi_bot 那条老路，
+        由 _route_to_bot / bot.send_event 内联处理，保证默认行为不变。
+        """
+        name = ""
+        if source == "fatfish" and channel:
+            name = self.channel_brains.get(str(channel), "")
+        if not name:
+            name = self.fatfish_brain if source == "fatfish" else self.onebot_brain
+        try:
+            from brains import resolve
+
+            name = resolve(name)
+        except Exception:
+            name = str(name or "").strip().lower()
+        if not name or name == "onebot":
+            return None
+        brain = self.brains.get(name)
+        if brain is None:
+            return None
+        if not brain.enabled or not brain.connected:
+            return None
+        return brain
+
+    def set_brain(self, source: str, name: str):
+        """运行期切换某个来源用哪个脑。返回生效后的名字。"""
+        from brains import resolve
+
+        key = resolve(name)
+        if key and key != "onebot" and key not in self.brains:
+            raise ValueError(f"未加载的大脑: {name}")
+        target = "onebot" if key in ("", "onebot") else key
+        if source == "fatfish":
+            self.fatfish_brain = target
+        elif source == "onebot":
+            self.onebot_brain = target
+        else:
+            raise ValueError(f"未知来源: {source}")
+        log.info("大脑切换：%s -> %s", source, target)
+        return target
+
+
     def bind_snow(self, snow):
         self.snow = snow
 
@@ -196,15 +251,17 @@ class HubBus:
         key = f"{msg.channel}:{msg.native_id}"
         if msg.native_id and self.state.seen("fatfish", key):
             return True
-        if self.fatfish_brain == "dsh" and self.dsh is not None and self.dsh.connected:
-            ok = await self.dsh.send_inbound(
-                f"fatfish:{msg.channel}", msg.sender_name or msg.sender, msg.text, msg=msg
-            )
+        # 可选脑（dsh / http …）；没配或不可用就返回 None，走默认的 momoi_bot
+        brain = self.brain_for("fatfish", msg.channel)
+        if brain is not None:
+            try:
+                ok = await brain.deliver("fatfish", msg)
+            except Exception:
+                log.exception("大脑 %s 处理失败，回落默认脑", brain.name)
+                ok = False
             if ok:
                 if msg.native_id:
                     self.state.mark_seen("fatfish", key)
-                log.info("FatFish -> DSH: #%s %s: %s", msg.channel, msg.sender_name,
-                         msg.text[:80].replace("\n", " "))
                 return True
         return await self._route_to_bot(msg)
 
@@ -251,24 +308,17 @@ class HubBus:
         key = f"{event.get('self_id')}:{mid}" if mid is not None else ""
         if key and self.state.seen("snowluma", key):
             return
-        if self.onebot_brain == "dsh" and self.dsh is not None and self.dsh.connected:
-            mt = str(event.get("message_type") or "")
-            if mt == "private":
-                session = f"onebot:private:{event.get('user_id')}"
-            elif mt == "group":
-                session = f"onebot:group:{event.get('group_id')}"
-            else:
-                session = ""
-            if session:
-                sender = event.get("sender") or {}
-                name = str(sender.get("card") or sender.get("nickname") or event.get("user_id") or "")
-                text = self._text_of(event.get("message"))
-                ok = await self.dsh.send_inbound(session, name, text)
-                if ok:
-                    if key:
-                        self.state.mark_seen("snowluma", key)
-                    log.info("SnowLuma -> DSH: %s %s", mt, event.get("user_id"))
-                    return
+        brain = self.brain_for("onebot")
+        if brain is not None:
+            try:
+                ok = await brain.deliver("onebot", event)
+            except Exception:
+                log.exception("大脑 %s 处理失败，回落默认脑", brain.name)
+                ok = False
+            if ok:
+                if key:
+                    self.state.mark_seen("snowluma", key)
+                return
         if self.bot is None:
             return
         if event.get("message_type") == "private":
@@ -283,8 +333,8 @@ class HubBus:
             self.state.mark_seen("snowluma", key)
         log.info("SnowLuma -> bot: %s %s", event.get("message_type"), event.get("user_id"))
 
-    # ---------------- DSH -> 平台 ----------------
-    async def on_dsh_reply(self, session: str, text: str):
+    # ---------------- 可选脑 -> 平台 ----------------
+    async def on_brain_reply(self, session: str, text: str):
         text = str(text or "").strip()
         if not text:
             return
@@ -293,7 +343,7 @@ class HubBus:
                 channel = session.split(":", 1)[1]
                 if self.fatfish is not None:
                     await self.fatfish.send_to_channel(channel, text)
-                    log.info("DSH -> FatFish: #%s %s", channel, text[:60])
+                    log.info("脑 -> FatFish: #%s %s", channel, text[:60])
                 return
             if session.startswith("onebot:private:"):
                 uid = int(session.rsplit(":", 1)[1])
@@ -301,7 +351,7 @@ class HubBus:
                     await self.snow.send_action(
                         "send_private_msg", {"user_id": uid, "message": text}
                     )
-                    log.info("DSH -> QQ 私聊: %s %s", uid, text[:60])
+                    log.info("脑 -> QQ 私聊: %s %s", uid, text[:60])
                 return
             if session.startswith("onebot:group:"):
                 gid = int(session.rsplit(":", 1)[1])
@@ -309,11 +359,15 @@ class HubBus:
                     await self.snow.send_action(
                         "send_group_msg", {"group_id": gid, "message": text}
                     )
-                    log.info("DSH -> QQ 群: %s %s", gid, text[:60])
+                    log.info("脑 -> QQ 群: %s %s", gid, text[:60])
                 return
-            log.warning("未知的 DSH 回复会话: %s", session)
+            log.warning("未知的回复会话: %s", session)
         except Exception:
-            log.exception("DSH 回复路由失败: %s", session)
+            log.exception("回复路由失败: %s", session)
+
+    async def on_dsh_reply(self, session: str, text: str):
+        """兼容旧调用名，等价于 on_brain_reply。"""
+        return await self.on_brain_reply(session, text)
 
     async def on_dsh_failed(self, session: str, msg=None, reason: str = ""):
         """DSH 没给出回复（报错/超时/掉线）：把原消息改投 momoi_bot，别静默丢。"""

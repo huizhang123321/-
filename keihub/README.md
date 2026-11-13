@@ -15,6 +15,66 @@ P1：核心转发
 
 P2/P3/P4（Windows 服务、托盘、Web 控制台、DSH 接入）见下方对应章节。
 
+## 谁来回话（可选大脑）
+
+Hub 收到消息后交给哪套「脑子」是可选的。**默认仍然是 momoi_bot，行为和以前完全一样**，
+不配 `brains` 段就直接走老链路。
+
+```yaml
+brains:
+  active: "onebot"            # 便捷写法：routing 没显式指定时用它当全局默认
+
+routing:
+  fatfish_brain: "onebot"     # FatFish 消息交给谁
+  onebot_brain: "onebot"      # QQ 消息交给谁
+  channels:                   # 按 FatFish 频道覆盖，优先级最高
+    "dm:huizhang:key": "dsh"
+```
+
+| 名字 | 是什么 | 需要什么 |
+|---|---|---|
+| `onebot`（别名 `bot`） | momoi_bot，OneBot 11 服务端那条老链路 | 无 |
+| `dsh` | DeepSeek Harness | 装 `dsh-hub-bridge` 插件（见下） |
+| `http` | 任意 HTTP 服务，POST 进去、同步拿回复 | 一个能返回 `{"reply": "..."}` 的地址 |
+
+**回落规则**：目标脑没启用、没连上、或处理时抛异常，都会自动回落到 `onebot`，
+消息不会因为换脑而丢。
+
+控制台顶部有下拉框可以**运行期切换**（只影响当前进程，重启后回到配置文件的值）。
+
+`http` 脑的约定：
+
+```jsonc
+// 请求 POST <brains.http.url>
+{"source": "fatfish", "session": "fatfish:general", "user": "爱丽丝", "text": "在吗"}
+
+// 回复，以下任意一种都行
+{"reply": "在呢"}   {"text": "在呢"}   {"message": "在呢"}   纯文本 "在呢"
+```
+
+**自己加一套脑子**：在 `brains/` 下新建一个文件，继承 `Brain`、用 `@register` 注册，
+实现 `deliver(source, payload)` 即可，不用动 `core/`。
+
+```python
+from .base import Brain
+from .registry import register
+
+@register
+class MyBrain(Brain):
+    name = "mine"
+    label = "我的服务"
+
+    @property
+    def connected(self):
+        return True
+
+    async def deliver(self, source, payload) -> bool:
+        # 接管返回 True；返回 False 就回落 momoi_bot
+        ...
+        await self.bus.on_brain_reply(f"fatfish:{payload.channel}", "回复内容")
+        return True
+```
+
 ## DSH 接入（P3）
 
 Hub 侧：

@@ -70,6 +70,19 @@ PAGE = r"""<!doctype html>
   </div>
 
   <section>
+    <h2>大脑（谁来回话）</h2>
+    <div class="row">
+      <span class="muted">FatFish</span>
+      <select id="brainFat"></select>
+      <span class="muted">QQ</span>
+      <select id="brainQq"></select>
+      <button onclick="applyBrains()">切换</button>
+      <span id="brainResult" class="muted"></span>
+    </div>
+    <div id="brainList" class="muted" style="margin-top:8px">-</div>
+  </section>
+
+  <section>
     <h2>FatFish 接入</h2>
     <div class="row">
       <input id="ffUrl" placeholder="粘贴 FatFish「设置 → API 接入服务」里的地址" style="flex:1;min-width:330px">
@@ -117,11 +130,49 @@ async function refresh() {
     document.getElementById('channels').textContent = (s.fatfish_channels || []).join(', ') || '-';
     document.getElementById('brains').textContent = JSON.stringify(s.brains || {});
     document.getElementById('uptime').textContent = '运行 ' + Math.floor((s.uptime_seconds||0)/60) + ' 分钟';
+    const list = s.brain_list || [];
+    fillBrainSelect('brainFat', (s.brains || {}).fatfish, list);
+    fillBrainSelect('brainQq', (s.brains || {}).onebot, list);
+    document.getElementById('brainList').textContent = list.length
+      ? list.map(b => b.name + (b.enabled ? '' : '(未启用)') + (b.connected ? '●' : '○')).join('  ') +
+        ((s.channel_brains && Object.keys(s.channel_brains).length)
+          ? '   按频道：' + JSON.stringify(s.channel_brains) : '')
+      : '-';
     const ff = document.getElementById('ffUrl');
     if (ff && !ff.dataset.touched && s.fatfish_api_base) {
       ff.value = s.fatfish_api_base + '/api/v1/messages';
     }
   } catch (e) { console.error(e); }
+}
+function fillBrainSelect(id, current, list) {
+  const el = document.getElementById(id);
+  if (!el || !list || !list.length) return;
+  const want = String(current || 'onebot');
+  const html = list.map(b => {
+    const mark = b.name === want ? ' selected' : '';
+    const off = b.enabled ? '' : '（未启用）';
+    const live = b.connected ? '' : '（离线）';
+    return '<option value="' + b.name + '"' + mark + '>' + b.label + off + live + '</option>';
+  }).join('');
+  if (el.dataset.sig !== html) { el.innerHTML = html; el.dataset.sig = html; }
+}
+async function applyBrains() {
+  const out = document.getElementById('brainResult');
+  out.textContent = '切换中…';
+  const pairs = [['fatfish', 'brainFat'], ['onebot', 'brainQq']];
+  for (const [source, id] of pairs) {
+    const brain = document.getElementById(id).value;
+    try {
+      const r = await fetch('/api/brains/select', {
+        method: 'POST', headers: {'content-type': 'application/json'},
+        body: JSON.stringify({source: source, brain: brain})
+      });
+      const d = await r.json();
+      if (!d.ok) { out.textContent = '失败：' + (d.error || ''); return; }
+    } catch (e) { out.textContent = '失败：' + e; return; }
+  }
+  out.textContent = '已切换（重启后回到配置文件的值）';
+  refresh();
 }
 async function loadLogs() {
   try {
@@ -211,6 +262,21 @@ def create_app(runtime):
     @app.get("/")
     def index():
         return Response(PAGE, mimetype="text/html")
+
+    @app.post("/api/brains/select")
+    def brains_select():
+        """运行期切换某个来源用哪个大脑（只影响当前进程，不写配置）。"""
+        data = request.get_json(force=True, silent=True) or {}
+        source = str(data.get("source") or "fatfish").strip().lower()
+        name = str(data.get("brain") or "").strip()
+        if runtime.bus is None:
+            return jsonify({"ok": False, "error": "Hub 未就绪"}), 503
+        try:
+            applied = runtime.bus.set_brain(source, name)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        log.info("控制台切换大脑：%s -> %s", source, applied)
+        return jsonify({"ok": True, "source": source, "brain": applied})
 
     @app.post("/api/fatfish/config")
     def fatfish_config():
