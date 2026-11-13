@@ -100,10 +100,25 @@ def quit_item(icon, item):
 
 
 def make_icon():
-    img = Image.new("RGBA", (64, 64), (17, 21, 28, 255))
+    """托盘图标：和 exe 图标同一只鱼（assets/keihub.ico 不随包分发，这里直接画）。"""
+    S = 256
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.ellipse((6, 6, 58, 58), fill=(37, 99, 235, 255))
-    d.text((24, 18), "K", fill=(255, 255, 255, 255))
+    d.rounded_rectangle((0, 0, S - 1, S - 1), radius=58, fill=(20, 28, 44, 255))
+
+    cx, cy, bw, bh = 122, 136, 64, 39
+    tx = cx + bw - 5
+    d.polygon([(tx, cy - 24), (tx + 40, cy - 40), (tx + 40, cy + 40), (tx, cy + 24)],
+              fill=(52, 120, 220, 255))
+    d.polygon([(cx - 10, cy - bh + 5), (cx + 18, cy - bh - 23), (cx + 32, cy - bh + 8)],
+              fill=(52, 120, 220, 255))
+    d.polygon([(cx - 8, cy + bh - 5), (cx + 8, cy + bh + 19), (cx + 24, cy + bh - 3)],
+              fill=(52, 120, 220, 255))
+    d.ellipse((cx - bw, cy - bh, cx + bw, cy + bh), fill=(79, 155, 255, 255))
+    d.ellipse((cx - bw + 11, cy - 18, cx + 16, cy + 10), fill=(126, 188, 255, 255))
+    ex, ey = cx - bw + 24, cy - 5
+    d.ellipse((ex - 10, ey - 10, ex + 10, ey + 10), fill=(255, 255, 255, 255))
+    d.ellipse((ex - 5, ey - 5, ex + 5, ey + 5), fill=(16, 22, 34, 255))
     return img
 
 
