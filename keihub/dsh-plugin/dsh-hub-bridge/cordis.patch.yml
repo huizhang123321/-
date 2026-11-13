@@ -1,0 +1,5 @@
+# dsh-hub-bridge —— KeiHub 连接件
+# 安装后 DSH 启动时插入这个插件。
+- insert:
+    - id: dsh-hub-bridge
+      name: dsh-hub-bridge

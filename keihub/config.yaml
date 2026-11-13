@@ -1,0 +1,99 @@
+# KeiHub —— FatFish / SnowLuma / momoi_bot / DSH 中间层
+# 所有端口、群号、映射都可改，不写死在代码里。
+
+hub:
+  name: "KeiHub"
+  log_level: "INFO"
+  state_db: "data/hub.db"
+  console_enabled: true
+  console_host: "127.0.0.1"
+  console_port: 8765
+  # 私聊回复路由窗口：FatFish 消息进来后这段时间内，bot 的私聊回复优先回 FatFish
+  private_route_window_seconds: 45
+
+adapters:
+  snowluma:
+    enabled: true
+    # SnowLuma 正向 WebSocket 服务端
+    ws_url: "ws://127.0.0.1:3001"
+    # SnowLuma HTTP 动作接口（WS 断线时兜底）
+    http_url: "http://127.0.0.1:3012"
+    token: ""
+    self_id: 3780075894
+    reconnect_seconds: 5
+
+  bot:
+    enabled: true
+    # Hub 对 momoi_bot 提供 OneBot WS 服务端，bot 的 forward_url 指向这里
+    host: "127.0.0.1"
+    port: 3010
+    bot_qq: 3780075894
+    # FatFish 群消息注入时自动补 @，满足 bot 的群聊 at_required
+    inject_at: true
+
+  fatfish:
+    enabled: true
+    # 首选地址。FatFish 每次启动可能换端口（5000 被占就挑 5100/5199…），
+    # Hub 会读 server.log 自动探测真实端口，这里填错也能跑。
+    api_base: "http://127.0.0.1:5000"
+    server_log_path: "C:\\Users\\yuchen\\AppData\\Roaming\\FatFish\\data\\server.log"
+    token: ""
+    # 留空时从现有 FatFish bot 配置里读取 token，避免重复保存明文
+    token_source: "E:\\聊天后端\\config.json"
+    db_path: "C:\\Users\\yuchen\\AppData\\Roaming\\FatFish\\data\\users\\messages.db"
+    presence_db_path: "C:\\Users\\yuchen\\AppData\\Roaming\\FatFish\\data\\presence.db"
+    bot_username: "kei_bot"
+    poll_seconds: 2.0
+    send_mode: "auto"          # auto / api / db
+    max_backlog_seconds: 900
+    # 自动映射没在 channels 里列出的新频道（dm:a:b / private:N / group:N），
+    # 否则每新建一个私聊都要改配置重启
+    auto_channels: true
+    # 哪些 sender 算「自己」，读到就当回声跳过
+    # 用 token 走 API 发送时，真实发送者是 token 的持有者，不一定等于 bot_username
+    skip_senders:
+      - "kei_bot"
+      - "key"
+
+    # FatFish 用户名 -> 注入给 bot 的 user_id
+    # huizhang 映射成 3337894736，bot 会按爱丽丝对待
+    users:
+      "huizhang": 3337894736
+      "kei_bot": 3780075894
+
+    # 这些 user_id 在聊天里显示成「爱丽丝」
+    alice_user_ids:
+      - 3337894736
+
+    # FatFish channel -> 虚拟 OneBot 会话
+    # 注意：group_id 不要和真实 QQ 群号重复，否则 bot 对那个 QQ 群的回复会被转到 FatFish
+    # 建议用 900000001 起的独立号；想和某个 QQ 群共用记忆才填真实群号
+    # type=group 用 group_id；type=private 用 user
+    channels:
+      "general":
+        type: "group"
+        group_id: 900000002
+        name: "general"
+      "private:1":
+        type: "group"
+        group_id: 900000001
+        name: "key"
+      # 私聊示例（如果你有 DM channel，把 channel 换成实际值）
+      # "private:2":
+      #   type: "private"
+      #   user: 3337894736
+      #   name: "爱丽丝"
+
+  dsh:
+    enabled: false
+    host: "127.0.0.1"
+    port: 3020
+    # DSH 这么长时间还没回（报错/掉线也算）就改投 momoi_bot，避免消息静默丢失
+    reply_timeout_seconds: 180
+    fallback_to_bot: true
+
+routing:
+  default_brain: "bot"          # bot / dsh
+  fatfish_brain: "bot"          # bot / dsh
+  onebot_brain: "bot"           # bot / dsh
+  mirror_qq_to_fatfish: false

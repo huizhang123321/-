@@ -1,0 +1,37 @@
+{
+  "fatfish": {
+    "api_base": "http://127.0.0.1:5000",
+    "server_log_path": "",
+    "token": "",
+    "db_path": "C:\\Users\\<你的用户名>\\AppData\\Roaming\\FatFish\\data\\users\\messages.db",
+    "presence_db_path": "C:\\Users\\<你的用户名>\\AppData\\Roaming\\FatFish\\data\\presence.db",
+    "bot_username": "kei_bot",
+    "channels": ["*"],
+    "start_from": "latest",
+    "poll_seconds": 2.0,
+    "send_mode": "auto",
+    "dry_run": false,
+    "auto_launch": false,
+    "launch_path": ""
+  },
+  "llm": {
+    "api_url": "https://api.deepseek.com/v1/chat/completions",
+    "api_key": "",
+    "model": "deepseek-v4-pro",
+    "max_tokens": 2048,
+    "temperature": 0.85,
+    "fallback_config": ""
+  },
+  "persona": {
+    "file": "",
+    "alice_usernames": ["huizhang"]
+  },
+  "behaviour": {
+    "batch_size": 20,
+    "context_messages": 10,
+    "max_context_chars": 6000,
+    "max_reply_chars": 1200,
+    "min_reply_interval_seconds": 1.5,
+    "max_backlog_seconds": 900
+  }
+}
