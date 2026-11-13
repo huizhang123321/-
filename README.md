@@ -3,6 +3,114 @@
 适配 `FatFish.exe`（后端 `resources\server\minimost-server.exe`，默认
 `http://127.0.0.1:5000`）的独立 Python bot。
 
+## 仓库里有两个东西
+
+| 路径 | 是什么 |
+|---|---|
+| [`keihub/`](keihub/README.md) | **主项目**：FatFish / QQ(SnowLuma) / momoi_bot / DSH 的中间层，带 Web 控制台、托盘、Windows 服务和打包脚本 |
+| [`fatfish_bot.py`](fatfish_bot.py) | 极简单文件版：只接 FatFish，直连 DeepSeek，没有 QQ，也不需要 KeiHub |
+
+下面先讲单文件版，中间的 KeiHub 见 [`keihub/README.md`](keihub/README.md)。
+
+## 接 DSH（DeepSeek Harness）
+
+KeiHub 默认用 momoi_bot 回话。想让 DSH 当大脑，把它挂成一条**可选路径**——
+不启用时行为和以前完全一样，不会强制使用 DSH。
+
+### 链路
+
+```
+FatFish(messages.db) ──读──→ KeiHub ──WS 3020──→ dsh-hub-bridge ──followup()──→ DSH
+                                │                                                  │
+                                │        reply{id,session,text} ←── turn/end 取最后一句
+                                ↓
+                          写回 FatFish（API 或直写 DB）
+```
+
+Hub 是 **WebSocket 服务端**（默认 `127.0.0.1:3020`），DSH 侧插件是**客户端**。
+两边只传三种帧：
+
+| 方向 | 帧 |
+|---|---|
+| Hub → 插件 | `{"type":"inbound","id":"…","session":"fatfish:private:1","user":"爱丽丝","text":"在吗"}` |
+| 插件 → Hub | `{"type":"reply","id":"…","session":"…","text":"…"}` |
+| 插件 → Hub | `{"type":"error","id":"…","session":"…","message":"…"}` |
+
+`id` 是请求号，插件原样带回用于精确配对；旧版插件不带 `id` 也能按 `session` 兜底配对。
+
+### 1. Hub 侧
+
+```yaml
+brains:
+  dsh:
+    enabled: true
+    host: "127.0.0.1"
+    port: 3020
+    reply_timeout_seconds: 180   # 这么久没回就放弃
+    fallback_to_bot: true        # 放弃时改投 momoi_bot
+
+routing:
+  fatfish_brain: "dsh"    # FatFish 交给 DSH
+  onebot_brain: "onebot"  # QQ 仍走 momoi_bot
+```
+
+只想让某个 FatFish 频道走 DSH：
+
+```yaml
+routing:
+  channels:
+    "dm:huizhang:key": "dsh"
+```
+
+改完重启 Hub。**DSH 没接上时消息会自动回落 momoi_bot，不会静默丢。**
+
+### 2. DSH 侧装插件
+
+用 DSH 自带的 CLI（不用 npx，本机就有）：
+
+```bat
+"C:\Users\<你>\AppData\Local\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" ^
+  plugin --profile desktop add "<仓库路径>\keihub\dsh-plugin\dsh-hub-bridge"
+```
+
+`plugin add` 只是透传 `pnpm add`，**不会自动挂载**，还得二选一：
+
+- 在 `~/.dsh/profiles/<profile>/package.json` 的 `dsh.profile.bundles` 里加
+  `"dsh-hub-bridge"`
+- 或在同目录 `cordis.patch.yml` 里加：
+
+  ```yaml
+  - insert:
+      - id: dsh-hub-bridge
+        name: dsh-hub-bridge
+  ```
+
+然后重启 DSH。首次启动会自动生成
+`%USERPROFILE%\.dsh\hub-bridge-config.json`：
+
+```json
+{ "hubUrl": "ws://127.0.0.1:3020", "target": "", "reconnectMs": 3000 }
+```
+
+`target` 留空 = 自动挑第一个有 `followup` 的 agent——很可能就是你正在用的会话，
+建议填一个专用会话 id 隔离起来。
+
+### 3. 确认连上了
+
+```powershell
+(Invoke-RestMethod http://127.0.0.1:8765/api/status).dsh_connected   # True
+```
+
+Hub 日志里出现 `keihub.dsh: DSH bridge WS 服务已启动` 和 `DSH 极薄插件已连接`
+即表示链路通了；控制台卡片「DSH 插件」也会变绿。
+
+### 不想要 DSH 怎么办
+
+`brains.dsh.enabled: false`（默认），一切照旧走 momoi_bot。
+另外 `brains.http` 可以指到任意自建服务，POST 进去同步拿回复，
+适合接别的模型或别人的 DSH——详见
+[`keihub/README.md`](keihub/README.md) 的「谁来回话」一节。
+
 ## 它怎么工作
 
 FatFish 官方 API 只有“推送”方向，没有订阅/读取接口，所以：

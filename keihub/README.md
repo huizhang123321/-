@@ -77,10 +77,14 @@ class MyBrain(Brain):
 
 ## DSH 接入（P3）
 
-Hub 侧：
+Hub 是 WebSocket **服务端**（默认 `127.0.0.1:3020`），DSH 侧插件是**客户端**。
+链路和协议说明见仓库根目录 [`README.md`](../README.md#接-dshdeepseek-harness)，
+这里只列配置和排查。
+
+**Hub 侧**：
 
 ```yaml
-adapters:
+brains:
   dsh:
     enabled: true
     host: "127.0.0.1"
@@ -89,22 +93,40 @@ adapters:
     fallback_to_bot: true
 
 routing:
-  fatfish_brain: "dsh"   # FatFish 交给 DSH
-  onebot_brain: "bot"    # QQ 仍走 momoi_bot
+  fatfish_brain: "dsh"    # FatFish 交给 DSH
+  onebot_brain: "onebot"  # QQ 仍走 momoi_bot
+  # 也可以只让某个频道走 DSH：
+  # channels:
+  #   "dm:huizhang:key": "dsh"
 ```
 
 DSH 没回（插件报错、超时、掉线）时，Hub 会把**原消息改投 momoi_bot**，
 不会静默丢掉；两边都不可用才会打一条 ERROR 日志。协议里带 `id` 请求号，
 插件原样回传即可精确配对。
 
-DSH 侧安装极薄插件：
+**DSH 侧**装极薄插件（用 DSH 自带 CLI）：
 
 ```bat
-npx @deepseek-ai/dsh plugin --profile <profile> add "E:\聊天后端\keihub\dsh-plugin\dsh-hub-bridge"
+"C:\Users\<你>\AppData\Local\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" ^
+  plugin --profile desktop add "<仓库路径>\keihub\dsh-plugin\dsh-hub-bridge"
 ```
 
+`plugin add` 只装包不挂载，还要把 `dsh-hub-bridge` 加进
+`~/.dsh/profiles/<profile>/package.json` 的 `dsh.profile.bundles`，
+或在 `cordis.patch.yml` 里 `- insert:` 一条，然后重启 DSH。
+
 插件只负责连 Hub、调用 `agent.followup()`、把 `assistant/message` 回传，不含路由。
-配置在 `%USERPROFILE%\.dsh\hub-bridge-config.json`。
+配置在 `%USERPROFILE%\.dsh\hub-bridge-config.json`（`target` 留空会抢第一个
+活着的 agent，建议填专用会话 id）。
+
+**排查顺序**：
+
+| 现象 | 看哪里 |
+|---|---|
+| 3020 没监听 | `brains.dsh.enabled` 是否为 true、Hub 是否重启过 |
+| 端口在听但 `dsh_connected=false` | 插件没装/没挂载，或 DSH 没重启 |
+| 连上但 FatFish 不回复 | 看 Hub 日志有没有 `DSH 未产生回复（超时）`，确认 `routing.fatfish_brain` |
+| 回复跑到 QQ 去了 | `session` 前缀解析错，说明插件回传的 `session` 被改了 |
 
 
 ## 服务 + 托盘 + Web 控制台（P4）
